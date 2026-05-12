@@ -1,6 +1,8 @@
 ﻿//
 // ゲームグラフィックス特論宿題アプリケーション
 //
+#include <cmath>
+
 #include "GgApp.h"
 
 // プロジェクト名
@@ -22,6 +24,117 @@
 
 // アニメーションの周期（秒）
 constexpr auto cycle{ 5.0 };
+
+namespace
+{
+  // 四元数 (x, y, z, w), w はスカラー成分
+  struct Quaternion
+  {
+    GLfloat x, y, z, w;
+  };
+
+  //
+  // 四元数を正規化する
+  //
+  Quaternion normalize(const Quaternion& q)
+  {
+    const auto l{ std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w) };
+
+    if (l > 0.0f) return Quaternion{ q.x / l, q.y / l, q.z / l, q.w / l };
+
+    return Quaternion{ 0.0f, 0.0f, 0.0f, 1.0f };
+  }
+
+  //
+  // 宿題：軸と回転角から単位四元数を求める関数
+  //
+  Quaternion quaternion(float x, float y, float z, float a)
+  {
+    const auto l{ std::sqrt(x * x + y * y + z * z) };
+
+    if (l <= 0.0f) return Quaternion{ 0.0f, 0.0f, 0.0f, 1.0f };
+
+    const auto s{ std::sin(a * 0.5f) / l };
+
+    return Quaternion{ x * s, y * s, z * s, std::cos(a * 0.5f) };
+  }
+
+  //
+  // 宿題：単位四元数を球面線形補間する
+  //
+  Quaternion slerp(const Quaternion& q0, const Quaternion& q1, float t)
+  {
+    auto q{ q1 };
+    auto c{ q0.x * q.x + q0.y * q.y + q0.z * q.z + q0.w * q.w };
+
+    if (c < 0.0f)
+    {
+      q.x = -q.x;
+      q.y = -q.y;
+      q.z = -q.z;
+      q.w = -q.w;
+      c = -c;
+    }
+
+    if (c > 0.9995f)
+    {
+      return normalize(Quaternion
+        {
+          q0.x + (q.x - q0.x) * t,
+          q0.y + (q.y - q0.y) * t,
+          q0.z + (q.z - q0.z) * t,
+          q0.w + (q.w - q0.w) * t
+        });
+    }
+
+    const auto a{ std::acos(c) };
+    const auto s{ std::sin(a) };
+    const auto s0{ std::sin((1.0f - t) * a) / s };
+    const auto s1{ std::sin(t * a) / s };
+
+    return Quaternion
+    {
+      q0.x * s0 + q.x * s1,
+      q0.y * s0 + q.y * s1,
+      q0.z * s0 + q.z * s1,
+      q0.w * s0 + q.w * s1
+    };
+  }
+
+  //
+  // 宿題：単位四元数から回転変換行列を求める
+  //
+  void quaternionMatrix(GLfloat* m, const Quaternion& q)
+  {
+    const auto x2{ q.x * q.x };
+    const auto y2{ q.y * q.y };
+    const auto z2{ q.z * q.z };
+    const auto xy{ q.x * q.y };
+    const auto yz{ q.y * q.z };
+    const auto zx{ q.z * q.x };
+    const auto xw{ q.x * q.w };
+    const auto yw{ q.y * q.w };
+    const auto zw{ q.z * q.w };
+
+    m[ 0] = 1.0f - 2.0f * (y2 + z2);
+    m[ 1] = 2.0f * (xy + zw);
+    m[ 2] = 2.0f * (zx - yw);
+    m[ 3] = 0.0f;
+
+    m[ 4] = 2.0f * (xy - zw);
+    m[ 5] = 1.0f - 2.0f * (z2 + x2);
+    m[ 6] = 2.0f * (yz + xw);
+    m[ 7] = 0.0f;
+
+    m[ 8] = 2.0f * (zx + yw);
+    m[ 9] = 2.0f * (yz - xw);
+    m[10] = 1.0f - 2.0f * (x2 + y2);
+    m[11] = 0.0f;
+
+    m[12] = m[13] = m[14] = 0.0f;
+    m[15] = 1.0f;
+  }
+}
 
 //
 // アプリケーション本体
@@ -124,7 +237,10 @@ int GgApp::main(int argc, const char* const* argv)
     // 時刻 t にもとづく回転アニメーション
     GLfloat mr[16];                   // 回転の変換行列
     // 【宿題】ここを解答してください（下の loadIdentity() を置き換えてください）
-    loadIdentity(mr);
+    const auto q0{ quaternion(1.0f, 0.0f, 0.0f, 1.0f) };
+    const auto q1{ quaternion(0.0f, 0.0f, 1.0f, 2.0f) };
+    const auto q{ slerp(q0, q1, t) };
+    quaternionMatrix(mr, q);
 
     // 時刻 t にもとづく平行移動アニメーション
     float location[3];                // 現在位置
